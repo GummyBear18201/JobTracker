@@ -19,7 +19,7 @@ db.connect();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-app.get("/api/:user_id", async (req, res) => {
+app.get("/api/jobTable/:user_id", async (req, res) => {
   const userId = req.params.user_id;
 
   try {
@@ -34,7 +34,7 @@ app.get("/api/:user_id", async (req, res) => {
   }
 });
 
-app.post("/add", async (req, res) => {
+app.post("/api/jobTable/add", async (req, res) => {
   const { date, company, status, links, notes, user_id } = req.body;
 
   try {
@@ -49,7 +49,7 @@ app.post("/add", async (req, res) => {
   }
 });
 
-app.put("/edit", async (req, res) => {
+app.put("/api/jobTable/edit", async (req, res) => {
   const { id, date, company, status, links, notes, user_id } = req.body;
 
   console.log("Edit request from user:", user_id);
@@ -73,7 +73,7 @@ app.put("/edit", async (req, res) => {
   }
 });
 
-app.delete("/delete/:id", async (req, res) => {
+app.delete("/api/jobTable/delete/:id", async (req, res) => {
   const id = req.params.id;
   try {
     await db.query("DELETE FROM jobtable WHERE id = $1", [id]);
@@ -83,18 +83,23 @@ app.delete("/delete/:id", async (req, res) => {
     res.status(500).json({ error: "Failed to delete item" });
   }
 });
-// -------------------------
+// -----------------------------------------------------------------------------------------------
 app.post("/logIn/signUp", async (req, res) => {
   const { email, password } = req.body;
 
   try {
     const saltRounds = 10;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
-    await db.query("INSERT INTO users (email, password) VALUES ($1, $2)", [
+    await db.query(
+      "INSERT INTO users (email, password, settings) VALUES ($1, $2, $3)",
+      [email, hashedPassword, { goal: 50 }]
+    );
+    const result = await db.query("SELECT id FROM users WHERE email = $1", [
       email,
-      hashedPassword,
     ]);
-    res.status(201).json({ message: "User registered successfully" });
+    const userId = result.rows[0].id;
+
+    res.status(201).json({ message: "User registered successfully", userId });
   } catch (err) {
     console.error("Database error:", err);
     res.status(500).json({ error: "Failed to register user" });
@@ -106,7 +111,7 @@ app.post("/logIn/signIn", async (req, res) => {
 
   try {
     const result = await db.query(
-      "SELECT id, password FROM users WHERE email = $1",
+      "SELECT id, password, settings FROM users WHERE email = $1",
       [email]
     );
 
@@ -123,11 +128,45 @@ app.post("/logIn/signIn", async (req, res) => {
     } else {
       console.log("User logged in successfully");
       const userId = result.rows[0].id;
-      res.status(200).json({ message: "User logged in successfully", userId });
+      const settings = result.rows[0].settings;
+      res
+        .status(200)
+        .json({ message: "User logged in successfully", userId, settings });
     }
   } catch (err) {
     console.error("Database error:", err);
     res.status(500).json({ error: "Server error during login" });
+  }
+});
+//--- settings
+app.put("/editGoal", async (req, res) => {
+  const { userId, goal } = req.body;
+
+  try {
+    await db.query(
+      `UPDATE users
+       SET settings = jsonb_set(settings, '{goal}', to_jsonb($1::int), true)
+       WHERE id = $2`,
+      [goal, userId]
+    );
+
+    res.status(200).json({ message: "Goal updated successfully" });
+  } catch (err) {
+    console.error("Error updating goal:", err);
+    res.status(500).json({ error: "Failed to update goal" });
+  }
+});
+
+app.get("/getGoal/:userId", async (req, res) => {
+  const userId = req.params.userId;
+  try {
+    const result = await db.query("SELECT settings FROM users WHERE id = $1", [
+      userId,
+    ]);
+    res.status(200).json(result.rows[0].settings.goal);
+  } catch (err) {
+    console.error("Error fetching goal:", err);
+    res.status(500).json({ error: "Failed to fetch goal" });
   }
 });
 
